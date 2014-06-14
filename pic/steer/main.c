@@ -27,22 +27,17 @@
 			  (SHL_PORT & SHL_MASK))
 
 /* HMI code */
-#define MASK_CNTRL 0x00
-#define MASK_BRAKE 0x40
-#define MASK_STEER 0x60
-#define MASK_ACCEL 0x70
-
-/* PWM stages */
-#define PWM_VAR1    0x1
-#define PWM_VAR2    0x2
-#define PWM_LOW     0x4
-#define PWM_ZERO    0x2 /* Initial state is VAR2 */
+#define MASK_CNTRL      0x00
+#define MASK_BRAKE      0x40
+#define MASK_ACCEL      0x50
+#define MASK_STEER_L    0x60
+#define MASK_STEER_H    0x70
 
 #define HMI_ZERO 0
 
 #define H_PIN_INA LATAbits.LATA6
-#define H_PIN_INB LATAbits.LATA7
-#define H_PIN_ENA LATBbits.LATB5
+#define H_PIN_INB LATBbits.LATB5
+#define H_PIN_ENA LATAbits.LATA7
 #define H_PIN_ENB LATBbits.LATB6
 
 #define setDirection(d) { H_PIN_INA = ina_table[d]; H_PIN_INB = inb_table[d]; }
@@ -93,10 +88,10 @@ unsigned char linemap[182] = { 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0
                                0x0B, 0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, \
                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-unsigned char ina_table[] = {1, 0, 1, 0};
-unsigned char inb_table[] = {1, 0, 0, 1};
+unsigned char ina_table[] = {1, 0, 0, 1};
+unsigned char inb_table[] = {1, 0, 1, 0};
 unsigned char speed_table[] = { 0x00, 0x5a, 0x66, 0x72, 0x7e, 0x8a, 0x96, 0xa2, \
-                                0xae, 0xba, 0xc5, 0xd0, 0xdb, 0xe6, 0xf1, 0xfc };
+                                0xae, 0xba, 0xc5, 0xd0, 0xdb, 0xe6, 0xf1, 0xfb };
 
 
 /* * * * * * * * * * * GLOBALS * * * * * * * * * * */
@@ -186,7 +181,7 @@ void ISR(void){
             RCSTA2bits.CREN=1;
         }else{
             uart_byte = RCREG2;
-            if((uart_byte & 0xf0) == MASK_STEER){     /* Device ID @ MSNibble */
+            if((uart_byte & 0xf0) == MASK_STEER_L){     /* Device ID @ MSNibble */
 
             }else if((uart_byte & 0xf0) == MASK_CNTRL){
                 if((uart_byte & 0x0f) == 0x00){ /* Reset signal received */
