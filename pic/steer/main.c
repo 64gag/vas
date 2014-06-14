@@ -45,12 +45,10 @@
 #define bridgeEnable() {H_PIN_ENA = 1; H_PIN_ENB = 1;}
 #define bridgeDisable() {H_PIN_ENA = 0; H_PIN_ENB = 0;}
 
-enum { H_DIR_B2VCC = 0,
-       H_DIR_B2GND,
-       H_DIR_LEFT,
-       H_DIR_RIGHT,
-       H_DIR_COUNT };
-
+#define H_DIR_B2VCC     0
+#define H_DIR_B2GND     1
+#define H_DIR_LEFT      2
+#define H_DIR_RIGHT     3
 
 /* * * * * * * * * * * LOOKUP TABLES * * * * * * * * * * */
 
@@ -104,32 +102,33 @@ void main(void)
 {
     OSCCON = 0b00000010 | FREQ_8M;
     while (!OSCCONbits.HFIOFS);   /* Wait for oscillator to stabilize */
+    OSCCON2 = 0;
     
     /* GPIO configurations*/
     ANCON0 = 0x10;  /* AN4 is used*/
     ANCON1 = 0;
     TRISA = 0x2f;   /* AN4 and encoder */
-    TRISB = 0x81;   /* Set RB7 (RX2) and encoder */
-    TRISC = 0x07;   /* Encoder */
+    TRISB = 0x01;   /* Encoder */
+    TRISC = 0x87;   /* RC1 (RX1) Encoder */
     LATA = 0;       /* Clear all bits */
     LATB = 0;
     LATC = 0;
 
     /* UART configurations */
-    TXSTA2bits.TX9 = 0;
-    TXSTA2bits.TXEN = 1;
-    TXSTA2bits.SYNC = 0;
-    TXSTA2bits.SENDB = 0;
-    TXSTA2bits.BRGH = 1;
-    RCSTA2bits.SPEN = 1;
-    RCSTA2bits.RX9 = 0;
-    RCSTA2bits.CREN = 1;
-    BAUDCON2bits.TXCKP = 0;
-    BAUDCON2bits.BRG16 = 0;
-    BAUDCON2bits.WUE = 0; /* Could be 1? */
-    BAUDCON2bits.ABDEN = 0;
-    SPBRG2 = 12;
-    SPBRGH2 = 0;
+    TXSTA1bits.TX9 = 0;
+    TXSTA1bits.TXEN = 1;
+    TXSTA1bits.SYNC = 0;
+    TXSTA1bits.SENDB = 0;
+    TXSTA1bits.BRGH = 1;
+    RCSTA1bits.SPEN = 1;
+    RCSTA1bits.RX9 = 0;
+    RCSTA1bits.CREN = 1;
+    BAUDCON1bits.TXCKP = 0;
+    BAUDCON1bits.BRG16 = 0;
+    BAUDCON1bits.WUE = 0; /* Could be 1? */
+    BAUDCON1bits.ABDEN = 0;
+    SPBRG1 = 12;
+    SPBRGH1 = 0;
 
     /* Configure CCP1 and its timer */
     PR2 = 0xff;             /* Value at which it interrupts */
@@ -141,16 +140,17 @@ void main(void)
     T2CON = 0x05;           /* Postscale = 0, Prescale = 16 */
 
     /* Interrupts */
-    PIR3bits.RC2IF = 0;     /* EUSART receive*/
-    PIE3bits.RC2IE = 1;
-    PIR3bits.TX2IF = 0;     /* EUSART transmit*/
-    PIE3bits.TX2IE = 1;
+    PIR1bits.RC1IF = 0;     /* EUSART receive*/
+    PIE1bits.RC1IE = 1;
+    PIR1bits.TX1IF = 0;     /* EUSART transmit*/
+    PIE1bits.TX1IE = 0;
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
     setSpeed(speed);
     setDirection(H_DIR_LEFT);
     bridgeEnable();
+
     while(shaft[SHAFT_POSITION()] > 30); /* While not at left */
 
     while(speed < 16){
@@ -174,13 +174,13 @@ void main(void)
 #pragma code isr=0x08
 #pragma interrupt ISR
 void ISR(void){
-    if (PIR3bits.RC2IF) {
-        if(RCSTA2 & 0x06){        /* Framing or overrun error */
-            uart_byte = RCREG2;      /* Clear errors and do nothing */
-            RCSTA2bits.CREN=0;
-            RCSTA2bits.CREN=1;
+    if (PIR1bits.RC1IF) {
+        uart_byte = RCREG1;
+        if(RCSTA1 & 0x06){        /* Framing or overrun error */
+            RCSTA1bits.CREN=0;      /* Clear errors and do nothing */
+            RCSTA1bits.CREN=1;
         }else{
-            uart_byte = RCREG2;
+
             if((uart_byte & 0xf0) == MASK_STEER_L){     /* Device ID @ MSNibble */
 
             }else if((uart_byte & 0xf0) == MASK_CNTRL){
@@ -189,7 +189,7 @@ void ISR(void){
                 }
             }
         }
-        PIR3bits.RC2IF = 0;
+        PIR1bits.RC1IF = 0;
     }
 }
 #pragma code
