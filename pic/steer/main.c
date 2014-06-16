@@ -6,9 +6,14 @@
  * Created on April 16, 2014, 12:14 PM
  */
 
+//#define UART
+#define CAN
+
 #include "config.h"
 #include <delays.h>
-
+#ifdef CAN
+ #include "ECAN.h"
+#endif
 
 /* * * * * * * * * * * MACROS * * * * * * * * * * */
 
@@ -100,6 +105,12 @@ unsigned char uart_byte;
 
 void main(void)
 {
+    #ifdef CAN
+        unsigned long id;
+        BYTE data[4];
+        BYTE dataLen;
+        ECAN_RX_MSG_FLAGS flags;
+    #endif
     OSCCON = 0b00000010 | FREQ_8M;
     while (!OSCCONbits.HFIOFS);   /* Wait for oscillator to stabilize */
     OSCCON2 = 0;
@@ -108,28 +119,28 @@ void main(void)
     ANCON0 = 0x10;  /* AN4 is used*/
     ANCON1 = 0;
     TRISA = 0x2f;   /* AN4 and encoder */
-    TRISB = 0x01;   /* Encoder */
+    TRISB = 0x09;   /* CAN, Encoder */
     TRISC = 0x87;   /* RC1 (RX1) Encoder */
     LATA = 0;       /* Clear all bits */
     LATB = 0;
     LATC = 0;
-
-    /* UART configurations */
-    TXSTA1bits.TX9 = 0;
-    TXSTA1bits.TXEN = 1;
-    TXSTA1bits.SYNC = 0;
-    TXSTA1bits.SENDB = 0;
-    TXSTA1bits.BRGH = 1;
-    RCSTA1bits.SPEN = 1;
-    RCSTA1bits.RX9 = 0;
-    RCSTA1bits.CREN = 1;
-    BAUDCON1bits.TXCKP = 0;
-    BAUDCON1bits.BRG16 = 0;
-    BAUDCON1bits.WUE = 0; /* Could be 1? */
-    BAUDCON1bits.ABDEN = 0;
-    SPBRG1 = 12;
-    SPBRGH1 = 0;
-
+    #ifdef UART
+        /* UART configurations */
+        TXSTA1bits.TX9 = 0;
+        TXSTA1bits.TXEN = 1;
+        TXSTA1bits.SYNC = 0;
+        TXSTA1bits.SENDB = 0;
+        TXSTA1bits.BRGH = 1;
+        RCSTA1bits.SPEN = 1;
+        RCSTA1bits.RX9 = 0;
+        RCSTA1bits.CREN = 1;
+        BAUDCON1bits.TXCKP = 0;
+        BAUDCON1bits.BRG16 = 0;
+        BAUDCON1bits.WUE = 0; /* Could be 1? */
+        BAUDCON1bits.ABDEN = 0;
+        SPBRG1 = 12;
+        SPBRGH1 = 0;
+    #endif
     /* Configure CCP1 and its timer */
     PR2 = 0xff;             /* Value at which it interrupts */
     TMR2 = 0x00;            /* Clear timer */
@@ -140,10 +151,12 @@ void main(void)
     T2CON = 0x05;           /* Postscale = 0, Prescale = 16 */
 
     /* Interrupts */
-    PIR1bits.RC1IF = 0;     /* EUSART receive*/
-    PIE1bits.RC1IE = 1;
-    PIR1bits.TX1IF = 0;     /* EUSART transmit*/
-    PIE1bits.TX1IE = 0;
+    #ifdef UART
+        PIR1bits.RC1IF = 0;     /* EUSART receive*/
+        PIE1bits.RC1IE = 1;
+        PIR1bits.TX1IF = 0;     /* EUSART transmit*/
+        PIE1bits.TX1IE = 0;
+    #endif
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
@@ -151,18 +164,18 @@ void main(void)
     setDirection(H_DIR_LEFT);
     bridgeEnable();
 
-    while(shaft[SHAFT_POSITION()] > 30); /* While not at left */
+    while(shaft[SHAFT_POSITION()] > 97); /* While not at left */
 
     while(speed < 16){
         setSpeed(speed++);
         setDirection(H_DIR_B2GND);
         Delay10KTCYx(10);
         setDirection(H_DIR_RIGHT);
-        while(shaft[SHAFT_POSITION()] < 97); /* While not at right */
+        while(shaft[SHAFT_POSITION()] < 30); /* While not at right */
         setDirection(H_DIR_B2GND);
         Delay10KTCYx(10);
         setDirection(H_DIR_LEFT);
-        while(shaft[SHAFT_POSITION()] > 30); /* While not at left */
+        while(shaft[SHAFT_POSITION()] > 97); /* While not at left */
     }
 
     setSpeed(0);
@@ -174,13 +187,13 @@ void main(void)
 #pragma code isr=0x08
 #pragma interrupt ISR
 void ISR(void){
+#ifdef UART
     if (PIR1bits.RC1IF) {
         uart_byte = RCREG1;
         if(RCSTA1 & 0x06){        /* Framing or overrun error */
             RCSTA1bits.CREN=0;      /* Clear errors and do nothing */
             RCSTA1bits.CREN=1;
         }else{
-
             if((uart_byte & 0xf0) == MASK_STEER_L){     /* Device ID @ MSNibble */
 
             }else if((uart_byte & 0xf0) == MASK_CNTRL){
@@ -191,5 +204,6 @@ void ISR(void){
         }
         PIR1bits.RC1IF = 0;
     }
+#endif
 }
 #pragma code

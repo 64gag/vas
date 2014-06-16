@@ -1,18 +1,23 @@
 /*
- * File:   main.c
- * Author: paguiar
- *
- *
- * Created on April 16, 2014, 12:14 PM
+ * Author: Pedro Aguiar
  */
+
+//#define UART
+#define CAN
 
 #include "config.h"
 #include <delays.h>
+#ifdef CAN
+ #include "ECAN.h"
+#endif
+
 
 /* HMI code */
-#define MASK_CNTRL 0x00
-#define MASK_BRAKE 0x40
-#define MASK_ACCEL 0x70
+#define MASK_CNTRL      0x00
+#define MASK_BRAKE      0x40
+#define MASK_ACCEL      0x50
+#define MASK_STEER_L    0x60
+#define MASK_STEER_H    0x70
 
 /* PWM stages */
 #define PWM_VAR1    0x1
@@ -45,6 +50,13 @@ unsigned char duty_table[64]   =   { 0x66, 0x3c, 0x00, 0x0c, \
                                      0xae, 0x0c, 0x00, 0x0c };
 
 void main(void) {
+    #ifdef CAN
+        unsigned long id;
+        BYTE data[4];
+        BYTE dataLen;
+        ECAN_RX_MSG_FLAGS flags;
+    #endif
+
     OSCCON = 0b00000010 | FREQ_8M;
     while (!OSCCONbits.HFIOFS);   /* Wait for oscillator to stabilize */
 
@@ -52,12 +64,13 @@ void main(void) {
     ANCON1 = 0;     /* Completely digital! */
     ANCON0 = 0;
     TRISA = 0x00;
-    TRISB = 0x80;   /* Set RB7 (RX2) */
+    TRISB = 0x88;   /* Set RB7 (RX2) */
     TRISC = 0x00;
     LATA = 0;       /* Datasheet says unused pins should be cleared outputs */
     LATB = 0;
     LATC = 0;
 
+#ifdef UART
     /* UART configurations */
     TXSTA2bits.TX9=0;
     TXSTA2bits.TXEN = 0;
@@ -73,6 +86,7 @@ void main(void) {
     BAUDCON2bits.ABDEN = 0;
     SPBRG2 = 12;
     SPBRGH2 = 0;
+#endif
 
     /* Configure CCP4 and its timer as PWM_LOW stage*/
     PR2 = 0xff;             /* Value at which it interrupts */
@@ -85,13 +99,26 @@ void main(void) {
     /* Interrupts */
     PIR1bits.TMR2IF = 1;    /* TMR2 (trigger IRQ to set up PWM) */
     PIE1bits.TMR2IE = 1;
+#ifdef UART
     PIR3bits.RC2IF = 0;     /* EUSART receive*/
     PIE3bits.RC2IE = 1;
+#endif
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
-    while(1){
-    }
+    #ifdef CAN
+        ECANInitialize();
+        while(1){
+            while(!ECANReceiveMessage(&id, data, &dataLen, &flags));
+            if(id == MASK_BRAKE){
+                hmi_state_buffer = (unsigned char)data[0];
+            }else if(id == MASK_CNTRL && data == 0x00){
+                hmi_state_buffer = HMI_ZERO;
+            }
+        }
+    #else
+        while(1);
+    #endif
 }
 
 #pragma code isr=0x08
@@ -124,6 +151,7 @@ void ISR (void){
       }
       PIR1bits.TMR2IF = 0;
     }
+#ifdef UART
     if (PIR3bits.RC2IF) {
         if(RCSTA2 & 0x06){        /* Framing or overrun error */
             uart_byte = RCREG2;      /* Clear errors and do nothing */
@@ -141,5 +169,6 @@ void ISR (void){
         }
         PIR3bits.RC2IF = 0;
     }
+#endif
 }
 #pragma code

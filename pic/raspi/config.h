@@ -1,3 +1,10 @@
+/* 
+ * File:   config.h
+ * Author: paguiar
+ *
+ * Created on April 16, 2014, 12:15 PM
+ */
+
 #ifndef CONFIG_H
 #define	CONFIG_H
 
@@ -12,7 +19,7 @@ extern "C" {
 // CONFIG1L
 #pragma config RETEN = OFF      // VREG Sleep Enable bit (Ultra low-power regulator is Disabled (Controlled by REGSLP bit))
 #pragma config INTOSCSEL = HIGH // LF-INTOSC Low-power Enable bit (LF-INTOSC in High-power mode during Sleep)
-#pragma config SOSCSEL = DIG   // SOSC Power Selection and mode Configuration bits (High Power SOSC circuit selected)
+#pragma config SOSCSEL = HIGH   // SOSC Power Selection and mode Configuration bits (High Power SOSC circuit selected)
 #pragma config XINST = OFF      // Extended Instruction Set (Disabled)
 
 // CONFIG1H
@@ -81,3 +88,4 @@ extern "C" {
 #endif
 
 #endif	/* CONFIG_H */
+
