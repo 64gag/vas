@@ -8,7 +8,7 @@
 #include "config.h"
 #include <delays.h>
 #ifdef CAN
- #include "ECAN.h"
+ #include "ecan.h"
 #endif
 
 /* HMI code */
