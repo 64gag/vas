@@ -2,4 +2,131 @@
 
 \section{Comunicación}
 \section{Microcontroladores}
+ \subsection{Instalación del toolchain}
+Al elegir las herramientas para trabajar con los microcontroladores seleccionados (PIC18F26K80) intentamos utilizar las herramientas oficiales de Microchip. Esto es importante mencionarlo porque difiere de lo utilizado en el curso de Microcontroladores de la UDEM (en el cual se utiliza mikroC, un IDE con compilador incluído que esconde más cosas al usuario y que no es gratuito). Las herramientas seleccionadas y utilizadas son: IDE MPLAB X y compilador XC8. Ambas herramientas son lo más reciente de Microchip y es lo promueven entre los desarrolladores que utilizan sus productos.
+
+\subsubsection{MPLAB X y XC8}
+Históricamente Microchip desarrolló MPLAB completamente ``in-house", pero la versión MPLAB X está basado en NetBeans de Oracle. El desarrollo sigue en activo y hay características que no han sido migradas o no funcionan correctamente en MPLAB X que sí funcionaban en versiones anteriores. Sobre esto hay muchas discusiones y comentarios negativos de usuarios en los foros, sin embargo al probar la versión más reciente se encontró que la funcionalidad necesaria funcionaba correctamente. Un efecto lateral de que MPLAB X esté basado en NetBeans es que se puede ejecutar en Windows, Mac y Linux.
+
+En cuanto al compilador, el compilador XC de Microchip que le corresponde al PIC utilizado es el compilador XC8. Este producto tiene una versión gratuita (que produce código más lento y grande que la versión PRO) y se puede activar una prueba de 60 días de la versión PRO. Alternativas gratuitas --no probadas-- existentes incluyen: sourceboost C (enlista el PIC18F26K80 como compatible) y SDCC (la página dice que el soporte para la familia PIC18 es trabajo en progreso).
+
+\subsubsection{PICkit2}
+En cuanto a la programación de los PICs (escribir el programa a la memoria interna) se optó por seguir usando PICkit2. Microchip ya lanzó una nueva herramienta (PICkit3), pero la version 2 sigue siendo la más popular entre los usuarios (con comentarios nada aislados de que la versión 3 es considerablemente más lenta) y se pueden encontrar en el mercado circuitos de terceros que implementan el protocolo de PICkit2 a un costo mucho menor que las herramientas de Microchip. El problema con usar la herramienta anterior es que Microchip dejó de agregar los nuevos dispositivos al DeviceFile.dat del software para programarlos, para que los desarrolladores migraran a usar PICkit3.
+
+El PIC18F26K80 no es soportado por PICkit2 oficialmente. Por lo tanto, este microcontrolador no se puede programar directamente desde MPLAB X. Sin embargo hay una herramienta no oficial para modificar el archivo DeviceFile.dat y después de buscar en internet se encontró una versión modificada que incluye el PIC18F26K80. Este archivo se debe reemplazar del que viene incluido en el software de PICkit2 para poder programar los microcontroladores.
+
+\subsubsection{Enlaces de descarga}
+\begin{itemize}
+\item MPLAB X:\\ {\scriptsize\href{http://www.microchip.com/pagehandler/en-us/family/mplabx/}{http://www.microchip.com/pagehandler/en-us/family/mplabx/}}
+\item XC8:\\ {\scriptsize\href{http://www.microchip.com/pagehandler/en-us/devtools/mplabxc/home.html}{http://www.microchip.com/pagehandler/en-us/devtools/mplabxc/home.html}}
+\item PICkit2:\\ {\scriptsize\href{http://ww1.microchip.com/downloads/en/DeviceDoc/PICkit\%202\%20v2.61.00\%20Setup\%20A.zip}{http://ww1.microchip.com/downloads/en/DeviceDoc/PICkit\%202\%20v2.61.00\%20Setup\%20A.zip}}
+\item DeviceFile.dat:\\ {\scriptsize\href{https://www.dropbox.com/s/ys1g41bcvhihju0/PK2DeviceFile.dat?dl=0}{https://www.dropbox.com/s/ys1g41bcvhihju0/PK2DeviceFile.dat?dl=0}}
+\end{itemize}
+
+ \subsection{Estructura}
+\begin{itemize}
+ \item El código específico a cada proyecto se encuentra en el archivo main.c. 
+ \item El archivo config.h tiene los valores que se escriben en los registros de configuración del microcontrolador y se indica que PIC se está usando (\#include <p18F2K80.h>).
+ \item Los archivos de ECAN (.c, .def, .h) son las rutinas de un AppNote de Microchip para utilizar este periférico. El archivo ECAN.def debe ser compartido por todos los nodos puesto que ahí se determina la velocidad a la que se está transmitiendo la información en el bus CAN.
+\end{itemize}
+
+ \subsection{VAS\_ACCEL}
+  \subsubsection{Código fuente}
+https://github.com/paguiar/udem\_vas/tree/master/pic/accel 
+
+  \subsubsection{Descripción general}
+El programa traduce los valores discretos recibidos por CAN o UART (esto se determina definiendo el macro CAN o UART respectivamente) a un valor de PWM que va al servomotor de la aceleración.
+
+  \subsubsection{Comunicación}
+Si se está trabajando por UART el programa funciona a través de interrupciones en su totalidad. Cuando la bandera de que se recibió un mensaje por UART se dispara el mensaje se lee, se interpreta la máscara para saber si el comando iba dirigido a este PIC y, de ser el caso, se copia el valor a la variable hmi\_state\_buffer. Si se detecta un comando de “reset” se carga el valor inicial a hmi\_state\_buffer. En hmi\_state\_buffer se almacena el valor discreto recibido para ser utilizado en el momento apropiado. Si se está utilizando CAN el programa funciona utilizando polling. De igual manera se recibe un valor, se interpreta la máscara y se almacena en la variable hmi\_state\_buffer.
+
+  \subsubsection{PWM}
+El servomotor utilizado requiere un pulso de PWM de baja frecuencia, el periférico del PIC no puede generar estos pulsos trabajando a 8 MHz con ninguna combinación de prescalers ni otras configuraciones. Para generar estos pulsos se programó una lógica de un PWM de tres fases, esta lógica tiene las siguientes características:
+\begin{itemize}
+\item En el código se les llamó PWM\_VAR1 (variable 1), PWM\_VAR2 (variable 2), PWM\_LOW.
+ \begin{itemize}
+  \item Los nombres de VAR1 y VAR2 vienen de que estas fases son las que pueden cambiar.
+  \item La fase de PWM\_LOW siempre está en estado lógico bajo.
+ \end{itemize}
+\item El principio de funcionamiento es que cuando el timer dispara la interrupción se configura la fase siguiente a la que acaba de iniciar.
+ \begin{itemize}
+  \item Cuando el timer se dispara al terminar VAR1 se configura LOW (LOW es la fase siguiente a VAR2, que es la que acaba de iniciar).
+  \item Cuando se dispara al terminar VAR2 se configura VAR1.
+  \item Cuando se dispara al terminar LOW se configura VAR2.
+  \item Esto es así porque cuando el timer se dispara la configuración que estaba almacenada pasa a ser la activa.
+ \end{itemize}
+\item hmi\_state\_buffer se copia en hmi\_state cuando se configura VAR1 (empezará un nuevo periodo).
+\item La fase PWM\_LOW es la más larga, cuando se configura esta fase también se configura el postscale del microcontrolador para que no se generen interrupciones cada vez que el timer termina (ver datasheet).
+\item Los registros necesarios se leen de un matriz declarada estáticamente.
+ \begin{itemize}
+  \item El número en hmi\_state se utiliza para acceder al valor apropiado en la matriz.
+  \item Para determinar los valores se creó y utilizó una hoja de cálculos:
+(https://docs.google.com/spreadsheets/d/1j35iqDffOqy\_P52gPLG6LKIsH3VQRF4FLMVtfxSuCus/edit\#gid=1285759812)
+ \end{itemize}
+\item Es necesario entender la lógica utilizada para utilizar la hoja de cálculos y modificar el código (ver datasheet, estudiar código fuente), la solución implementada es óptima.
+\end{itemize}
+
+\subsection{VAS\_BRAKE}
+\subsubsection{Código fuente}
+https://github.com/paguiar/udem\_vas/tree/master/pic/
+
+\subsubsection{Descripción general}
+Este programa es igual al de VAS\_ACCEL, las únicas diferencias son:
+\begin{itemize}
+\item La máscara para discriminar si el mensaje iba dirigido a este PIC
+\item Los valores de los registros que se utilizan para llenar la matriz duty\_table
+ \begin{itemize}
+  \item Estos se calcularon para el freno con la hoja de cálculos mencionada en la sección de VAS\_ACCEL.
+  \item Los valores no son los mismos porque el servomotor está en otra posición y necesita moverse en otro rango de ángulos.
+ \end{itemize}
+\end{itemize}
+
+\subsection{VAS\_RASPI}
+\subsubsection{Código fuente}
+https://github.com/paguiar/udem\_vas/tree/master/pic/raspi 
+\subsubsection{Descripción}
+\begin{itemize}
+\item Este programa tiene la tarea de recibir información del Raspberry por UART y enviarla por CAN.
+\item La recepción de UART se hace en la rutina de interrupción.
+\item Se detecta máscara que indica que es un valor de la dirección.
+ \begin{itemize}
+  \item El valor de la dirección se recibe en dos partes.
+  \item Primero se discrimina entre qué parte se esta recibiendo para marcar la bandera correspondiente.
+  \item Se reconstruye el número en un solo byte.
+ \end{itemize}
+\item Si se recibe cualquier otro valor se almacena en un buffer.
+\item Cuando hay un valor de dirección listo se envía por CAN.
+\item Cuando hay algún valor en el buffer de envío se envía por CAN.
+\item Aquí también el CAN es implementado por polling.
+\item Este es el programa más sencillo.
+\end{itemize}
+
+\subsection{VAS\_STEER}
+\subsubsection{Código fuente}
+https://github.com/paguiar/udem\_vas/tree/master/pic/steer 
+\subsubsection{Descripción}
+\begin{itemize}
+\item Este programa lee la posición reportada por el shaft encoder.
+	\begin{itemize}
+	\item La posición es recibida en varios puertos por lo que se debe reconstruir el valor.
+	\item Las posiciones no están ordenadas y, por lo tanto, se tienen que recuperar de una lookup table.
+
+	\end{itemize}
+\item Hay lookup tables para:
+	\begin{itemize}
+	\item shaft: el index es el valor leído del encoder y contiene la posición angular correspondiente.
+	\item linemap: el index es el ángulo de la línea y contiene la posición angular del encoder buscada.
+	\item ina e inb: los valores logicos en los pines para el puente H.
+	\item speed\_table: son los valores de PWM duty que se envían al puente H para controlar la velocidad. Nota: nunca debe de usarse un duty de 100%, ver datasheet.
+	\end{itemize}
+\item Se usan macros para las funciones debido a que no se pueden hacer inlines con el compilador utilizado.
+\item Actualmente el programa implementa un control On-Off
+	\begin{itemize}
+	\item Si la posición del encoder está a la derecha de la posición deseada, se hace girar el motor a la izquierda.
+	\item Si esta a la izquierda se gira a la derecha.
+	\item Se hace esto para todas las velocidades, a manera de prueba.
+	\end{itemize}
+\end{itemize}
+\section{TCP server para HMI}
+
 \section{Visión}

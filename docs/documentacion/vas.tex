@@ -14,6 +14,7 @@
 \usepackage[pdftex,pdfpagelabels,bookmarks,hyperindex,hyperfigures,hidelinks,linktoc=all]{hyperref}
 \usepackage[all]{hypcap}
 \usepackage{tikz-timing}[2009/05/15]
+\usepackage{booktabs}
 
 \pagestyle{fancy}
 \renewcommand{\sectionmark}[1]{ \markboth{#1}{} }
@@ -31,11 +32,11 @@
 \titlespacing*{\chapter}
 {0pt}{0pt}{0pt}
 
-\numberwithin{equation}{section}
-\numberwithin{figure}{section}
-\numberwithin{table}{section}
+\numberwithin{equation}{chapter}
+\numberwithin{figure}{chapter}
+\numberwithin{table}{chapter}
 
-\setlength\parindent{0pt}
+\setlength\parindent{16pt}
 
 \newcommand{\horrule}[1]{\rule{\linewidth}{#1}} 
 \newcommand*{\sectionpostamble}{}
