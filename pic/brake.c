@@ -2,22 +2,14 @@
  * Author: Pedro Aguiar
  */
 
-//#define UART
-#define CAN
+#define DEBUG 0
 
 #include "config.h"
 #include <delays.h>
-#ifdef CAN
- #include "ecan.h"
+#include "can.h"
+#if DEBUG
+    #include <stdio.h>
 #endif
-
-
-/* HMI code */
-#define MASK_CNTRL      0x00
-#define MASK_BRAKE      0x40
-#define MASK_ACCEL      0x50
-#define MASK_STEER_L    0x60
-#define MASK_STEER_H    0x70
 
 /* PWM stages */
 #define PWM_VAR1    0x1
@@ -27,10 +19,11 @@
 #define HMI_ZERO    0x00    /* Initial "hmi_state" */
 
 /* Globals */
-unsigned char hmi_state=HMI_ZERO;
-unsigned char hmi_state_buffer=HMI_ZERO;
+unsigned char hmi_state = HMI_ZERO;
+unsigned char hmi_state_buffer = HMI_ZERO;
 unsigned char pwm_step = PWM_ZERO;
 unsigned char uart_byte;
+unsigned char can_dummy = 0x88;
                                   /*  LV1  CONV1  LV2  CONV2 */
 unsigned char duty_table[64]   =   { 0x66, 0x3c, 0x00, 0x0c, \
                                      0x6b, 0x3c, 0x00, 0x0c, \
@@ -50,30 +43,22 @@ unsigned char duty_table[64]   =   { 0x66, 0x3c, 0x00, 0x0c, \
                                      0xae, 0x0c, 0x00, 0x0c };
 
 void main(void) {
-    #ifdef CAN
-        unsigned long id;
-        BYTE data[4];
-        BYTE dataLen;
-        ECAN_RX_MSG_FLAGS flags;
-    #endif
-
     OSCCON = 0b00000010 | FREQ_8M;
     while (!OSCCONbits.HFIOFS);   /* Wait for oscillator to stabilize */
 
     /* GPIO configurations*/
-    ANCON1 = 0;     /* Completely digital! */
+    ANCON1 = 0;     /* Completely digital */
     ANCON0 = 0;
     TRISA = 0x00;
-    TRISB = 0x88;   /* Set RB7 (RX2) */
+    TRISB = 0x88;   /* Set RB7 and RB3 (RX2 and CANRX) */
     TRISC = 0x00;
     LATA = 0;       /* Datasheet says unused pins should be cleared outputs */
     LATB = 0;
     LATC = 0;
 
-#ifdef UART
     /* UART configurations */
     TXSTA2bits.TX9=0;
-    TXSTA2bits.TXEN = 0;
+    TXSTA2bits.TXEN = 1;
     TXSTA2bits.SYNC=0;
     TXSTA2bits.SENDB = 0;
     TXSTA2bits.BRGH=1;
@@ -86,7 +71,6 @@ void main(void) {
     BAUDCON2bits.ABDEN = 0;
     SPBRG2 = 12;
     SPBRGH2 = 0;
-#endif
 
     /* Configure CCP4 and its timer as PWM_LOW stage*/
     PR2 = 0xff;             /* Value at which it interrupts */
@@ -99,31 +83,37 @@ void main(void) {
     /* Interrupts */
     PIR1bits.TMR2IF = 1;    /* TMR2 (trigger IRQ to set up PWM) */
     PIE1bits.TMR2IE = 1;
-#ifdef UART
+
+    RXB0IF = 0;             /* CAN module interrupts */
+    RXB1IF = 0;
+    TXB0IF = 0;
+    PIE5bits.RXB0IE = 1;
+    PIE5bits.RXB1IE = 1;
+    TXBIEbits.TXB0IE = 0;
+    
     PIR3bits.RC2IF = 0;     /* EUSART receive*/
     PIE3bits.RC2IE = 1;
-#endif
+
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
-    #ifdef CAN
-        ECANInitialize();
-        while(1){
-            while(!ECANReceiveMessage(&id, data, &dataLen, &flags));
-            if(id == MASK_BRAKE){
-                hmi_state_buffer = (unsigned char)data[0];
-            }else if(id == MASK_CNTRL && data == 0x00){
-                hmi_state_buffer = HMI_ZERO;
-            }
-        }
-    #else
-        while(1);
+    /* Initialize CAN module */
+    can_init(CAN_MODE_NORMAL, CAN_ID_BRAKE);
+
+    /* Send with: */
+    TXB0CON = 0x03;
+    TXB0SIDH = CAN_ID_BRAKE;
+    TXB0SIDL = 0x00;
+    TXB0DLC = 1;
+
+    #if DEBUG
+        printf("Reached the infinite loop\r\n");
     #endif
+    
+    while(1);
 }
 
-#pragma code isr=0x08
-#pragma interrupt ISR
-void ISR (void){
+void interrupt isr (void){
     if(PIR1bits.TMR2IF){
       switch(pwm_step){
           case PWM_VAR1:
@@ -151,24 +141,67 @@ void ISR (void){
       }
       PIR1bits.TMR2IF = 0;
     }
-#ifdef UART
+
     if (PIR3bits.RC2IF) {
-        if(RCSTA2 & 0x06){        /* Framing or overrun error */
-            uart_byte = RCREG2;      /* Clear errors and do nothing */
-            RCSTA2bits.CREN=0;
+        uart_byte = RCREG2;
+        if(RCSTA2 & 0x06){          /* Framing or overrun error */
+            RCSTA2bits.CREN=0;      /* Clear errors and do nothing */
             RCSTA2bits.CREN=1;
         }else{
-            uart_byte = RCREG2;
-            if((uart_byte & 0xf0) == MASK_BRAKE){     /* Device ID @ MSNibble */
-                hmi_state_buffer = uart_byte & 0x0f;  /* State @ LSNibble */
-            }else if((uart_byte & 0xf0) == MASK_CNTRL){
-                if((uart_byte & 0x0f) == 0x00){ /* Reset signal received */
-                    hmi_state_buffer = HMI_ZERO;
-                }
-            }
+            #if DEBUG
+                printf("Received byte: %x at RCREG2\r\n", uart_byte);
+            #endif
         }
+
         PIR3bits.RC2IF = 0;
     }
-#endif
+
+    if(TXB0IF){
+        TXB0IF = 0;
+    }
+
+    /* Command to this node received */
+    if (RXB0IF && RXB0FUL){
+        LATAbits.LA2 ^= 1;
+        if(RXB0OVFL){
+                RXB0OVFL = 0;
+        }
+
+        #if DEBUG
+            printf("Received byte: %x with ID: %x at RXB0\r\n", RXB0D0, RXB0SIDH);
+        #endif
+
+        hmi_state_buffer = RXB0D0; /* Update the state to the received byte */
+
+        /* Done reading, clear flags*/
+        RXB0FUL = 0;
+        RXB0IF = 0;
+    }
+
+    /* RESET signal received */
+    if (RXB1IF && RXB1FUL){
+        if (RXB1OVFL){
+                RXB1OVFL = 0;
+        }
+
+        #if DEBUG
+            printf("Received byte: %x with ID: %x at RXB1\r\n", RXB1D0, RXB1SIDH);
+        #endif
+
+        hmi_state_buffer = HMI_ZERO; /* Reset to initial state */
+
+        /* Done reading, clear flags*/
+        RXB1FUL = 0;
+        RXB1IF = 0;
+    }
 }
-#pragma code
+
+#if DEBUG
+void putch(char data) {
+   while(!TX2IF){
+       continue;
+   }
+
+   TXREG2 = data;
+}
+#endif

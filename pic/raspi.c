@@ -2,28 +2,22 @@
  * Author: Pedro Aguiar
  */
 
+#define DEBUG 0
+
 #include "config.h"
 #include <delays.h>
-#include "ecan.h"
+#include "can.h"
+#if DEBUG
+    #include <stdio.h>
+#endif
 
-/* HMI code */
-#define MASK_CNTRL      0x00
-#define MASK_BRAKE      0x40
-#define MASK_ACCEL      0x50
-#define MASK_STEER_L    0x60
-#define MASK_STEER_H    0x70
+#define UART_BUFFER 8
+unsigned char filters[2] = {CAN_ID_BRAKE, CAN_ID_ACCEL};
+unsigned char c= 0, i = 0;
 
-#define UART_BUFFER    6
-
-unsigned char uart_byte[UART_BUFFER];
-unsigned char steer_byte;
-unsigned char valid_data[UART_BUFFER] = {0};
-unsigned char steer_valid = 0;
-
-unsigned char uart_tmp;
-unsigned char can_byte;
-
-unsigned char u = 0, i;
+unsigned char uart_string[UART_BUFFER];
+unsigned char uart_byte;
+unsigned char u = 3;
 
 void main(void) {
     OSCCON = 0b00000010 | FREQ_8M;
@@ -33,7 +27,7 @@ void main(void) {
     ANCON1 = 0;     /* Completely digital! */
     ANCON0 = 0;
     TRISA = 0x00;
-    TRISB = 0x88;   /* Set RB7 (RX2) */
+    TRISB = 0x88;   /* Set RB7 and RB3 (RX2 and CANRX) */
     TRISC = 0x00;
     LATA = 0;       /* Datasheet says unused pins should be cleared outputs */
     LATB = 0;
@@ -41,7 +35,7 @@ void main(void) {
 
     /* UART configurations */
     TXSTA2bits.TX9=0;
-    TXSTA2bits.TXEN = 0;
+    TXSTA2bits.TXEN = 1;
     TXSTA2bits.SYNC=0;
     TXSTA2bits.SENDB = 0;
     TXSTA2bits.BRGH=1;
@@ -56,57 +50,90 @@ void main(void) {
     SPBRGH2 = 0;
 
     /* Interrupts */
+    RXB0IF = 0;             /* CAN module interrupts */
+    RXB1IF = 0;
+    TXB0IF = 0;
+    PIE5bits.RXB0IE = 0;
+    PIE5bits.RXB1IE = 0;
+    TXBIEbits.TXB0IE = 1;
+
     PIR3bits.RC2IF = 0;     /* EUSART receive*/
     PIE3bits.RC2IE = 1;
+
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
-    ECANInitialize();
+    LATAbits.LA0 = 1;
+
+    /* Initialize CAN module */
+    can_init(CAN_MODE_NORMAL, 0xff);
+
+    /* Send CAN with: */
+    TXB0CON = 0x03;
+    TXB0SIDL = 0x00;
+    TXB0SIDH = CAN_ID_BRAKE;
+    TXB0DLC = 1;
+    TXB0D0 = 0x00;
+
+    #if DEBUG
+        printf("Reached the infinite loop\r\n");
+    #endif
+
+    LATAbits.LA1 = 1;
     
     while(1){
-        if(steer_valid == 0x03){
-                while(!ECANSendMessage(MASK_STEER_L, &steer_byte, 1, ECAN_TX_STD_FRAME | ECAN_TX_PRIORITY_3));
-                steer_valid = 0;
+        TXB0SIDH = filters[c];
+        TXB0CON |= 0x08;
+
+        c ^= 1;
+        for(i = 0; i < 10; i++){
+            __delay_ms(50);
         }
-        for(i = 0; i < UART_BUFFER; i++){
-            if(valid_data[i]){
-                can_byte = uart_byte[i] & 0x0f;
-                while(!ECANSendMessage(uart_byte[i] & 0xf0, &can_byte, 1, ECAN_TX_STD_FRAME | ECAN_TX_PRIORITY_3));
-                valid_data[i] = 0;
-            }
-        }
+        while(TXB0CON & 0x08);
+        LATAbits.LA2 ^= 1;
     }
 }
 
-#pragma code isr=0x08
-#pragma interrupt ISR
-void ISR (void){
+void interrupt isr (void){
     if (PIR3bits.RC2IF) {
-        uart_tmp = RCREG2;
+        uart_byte = RCREG2;
 
         if(RCSTA2 & 0x06){        /* Framing or overrun error */
             RCSTA2bits.CREN=0;    /* Clear errors and do nothing */
             RCSTA2bits.CREN=1;
         }else{
-            if((uart_tmp & MASK_STEER_L) == MASK_STEER_L){
-                if(uart_tmp & 0x10){ /* High nibble */
-                    steer_byte &= 0x0f;             /* Clear high nibble */
-                    steer_byte |= (uart_tmp << 4);  /* Set the new value */
-                    steer_valid |= 0x02;            /* Mark it as valid */
-                }else{               /* Low nibble */
-                    steer_byte &= 0xf0;             /* Clear low nibble */
-                    steer_byte |= (uart_tmp & 0x0f);/* Set the new value */
-                    steer_valid |= 0x01;            /* Mark it as valid */
-                }
-            }else{ /* Not a steering value, buffer it */
-                uart_byte[u] = uart_tmp;
-                valid_data[u] = 1;
-                if(++u >= UART_BUFFER){
-                    u = 0;
-                }
+            if(uart_byte < 'a' || uart_byte > 'z'){
+                u = 0;
+            }else{
+                uart_string[u++] = uart_byte;
             }
+
+            if(u == 2){
+                TXB0SIDH = uart_string[0];
+                TXB0D0 = uart_string[1];
+                TXB0CON |= 0x08;
+                u = 0;
+            }
+            LATAbits.LA2 = 1;
         }
         PIR3bits.RC2IF = 0;
     }
+
+    if(TXB0IF){
+        #if DEBUG
+            printf("byte 0x%02X sent with SIDH 0x%02X\r\n", TXB0D0, TXB0SIDH);
+        #endif
+        LATAbits.LA2 = 0;
+        TXB0IF = 0;
+    }
 }
-#pragma code
+
+#if DEBUG
+void putch(char data) {
+   while(!TX2IF){
+       continue;
+   }
+
+   TXREG2 = data;
+}
+#endif
