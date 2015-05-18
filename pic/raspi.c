@@ -46,7 +46,7 @@ void main(void) {
     BAUDCON2bits.BRG16 = 0;
     BAUDCON2bits.WUE = 0; /* Could be 1? */
     BAUDCON2bits.ABDEN = 0;
-    SPBRG2 = 12;
+    SPBRG2 = 25;
     SPBRGH2 = 0;
 
     /* Interrupts */
