@@ -8,7 +8,7 @@ void can_init(unsigned char mode, unsigned char id)
 	/* Change into configuration mode */
 	CANCON &= 0x1f;
 	CANCON |= CAN_MODE_CONFIG;
-        while((CANSTAT & CAN_MODE_MASK) != CAN_MODE_CONFIG);
+    while((CANSTAT & CAN_MODE_MASK) != CAN_MODE_CONFIG);
 
 	/* Set bit rates */
 	BRGCON1 = 0b00000011; /* SJW: 1, BRP: 4 */
@@ -32,7 +32,7 @@ void can_init(unsigned char mode, unsigned char id)
 	RXF0SIDH = id;      /* RXB0 */
 	RXF1SIDH = 0xff;
 
-        RXF2SIDH = CAN_ID_RESET;    /* RXB1 */
+    RXF2SIDH = CAN_ID_RESET;    /* RXB1 */
 	RXF3SIDH = 0xff;
 	RXF4SIDH = 0xff;
 	RXF5SIDH = 0xff;

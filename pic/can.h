@@ -2,10 +2,11 @@
 #define _CAN_H
 
 /* HMI codes for CAN IDs */
-#define CAN_ID_STEER 'a'
-#define CAN_ID_RESET 'b'
-#define CAN_ID_BRAKE 'c'
-#define CAN_ID_ACCEL 'd'
+#define CAN_ID_RESET 0x00
+#define CAN_ID_RASPI 0x61
+#define CAN_ID_STEER 0x62
+#define CAN_ID_BRAKE 0x63
+#define CAN_ID_ACCEL 0x64
 
 #define CAN_MODE_NORMAL 0x00
 #define CAN_MODE_LOOPBACK 0x40
