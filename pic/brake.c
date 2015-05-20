@@ -3,6 +3,7 @@
  */
 
 #define DEBUG 0
+//#define UART
 
 #include "config.h"
 #include <delays.h>
@@ -22,8 +23,9 @@
 unsigned char hmi_state = HMI_ZERO;
 unsigned char hmi_state_buffer = HMI_ZERO;
 unsigned char pwm_step = PWM_ZERO;
-unsigned char uart_byte;
-unsigned char can_dummy = 0x88;
+#ifdef UART
+    unsigned char uart_byte;
+#endif
                                   /*  LV1  CONV1  LV2  CONV2 */
 unsigned char duty_table[64]   =   { 0x66, 0x3c, 0x00, 0x0c, \
                                      0x6b, 0x3c, 0x00, 0x0c, \
@@ -56,21 +58,23 @@ void main(void) {
     LATB = 0;
     LATC = 0;
 
-    /* UART configurations */
-    TXSTA2bits.TX9=0;
-    TXSTA2bits.TXEN = 1;
-    TXSTA2bits.SYNC=0;
-    TXSTA2bits.SENDB = 0;
-    TXSTA2bits.BRGH=1;
-    RCSTA2bits.SPEN=1;
-    RCSTA2bits.RX9=0;
-    RCSTA2bits.CREN=1;
-    BAUDCON2bits.TXCKP = 0;
-    BAUDCON2bits.BRG16 = 0;
-    BAUDCON2bits.WUE = 0; /* Could be 1? */
-    BAUDCON2bits.ABDEN = 0;
-    SPBRG2 = 12;
-    SPBRGH2 = 0;
+    #ifdef UART
+        /* UART configurations */
+        TXSTA2bits.TX9 = 0;
+        TXSTA2bits.TXEN = 1;
+        TXSTA2bits.SYNC = 0;
+        TXSTA2bits.SENDB = 0;
+        TXSTA2bits.BRGH = 1;
+        RCSTA2bits.SPEN = 1;
+        RCSTA2bits.RX9 = 0;
+        RCSTA2bits.CREN = 1;
+        BAUDCON2bits.TXCKP = 0;
+        BAUDCON2bits.BRG16 = 0;
+        BAUDCON2bits.WUE = 0; /* Could be 1? */
+        BAUDCON2bits.ABDEN = 0;
+        SPBRG2 = 51;
+        SPBRGH2 = 0;
+    #endif
 
     /* Configure CCP4 and its timer as PWM_LOW stage*/
     PR2 = 0xff;             /* Value at which it interrupts */
@@ -91,20 +95,18 @@ void main(void) {
     PIE5bits.RXB1IE = 1;
     TXBIEbits.TXB0IE = 0;
     
-    PIR3bits.RC2IF = 0;     /* EUSART receive*/
-    PIE3bits.RC2IE = 1;
+    #ifdef UART
+        PIR3bits.RC2IF = 0;     /* EUSART receive*/
+        PIE3bits.RC2IE = 1;
+        PIR3bits.TX2IF = 0;     /* EUSART transmit*/
+        PIE3bits.TX2IE = 0;
+    #endif
 
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
     /* Initialize CAN module */
     can_init(CAN_MODE_NORMAL, CAN_ID_BRAKE);
-
-    /* Send with: */
-    TXB0CON = 0x03;
-    TXB0SIDH = CAN_ID_BRAKE;
-    TXB0SIDL = 0x00;
-    TXB0DLC = 1;
 
     #if DEBUG
         printf("Reached the infinite loop\r\n");
@@ -142,27 +144,29 @@ void interrupt isr (void){
       PIR1bits.TMR2IF = 0;
     }
 
-    if (PIR3bits.RC2IF) {
-        uart_byte = RCREG2;
-        if(RCSTA2 & 0x06){          /* Framing or overrun error */
-            RCSTA2bits.CREN=0;      /* Clear errors and do nothing */
-            RCSTA2bits.CREN=1;
-        }else{
-            #if DEBUG
-                printf("Received byte: %x at RCREG2\r\n", uart_byte);
-            #endif
+    #ifdef UART
+        if (PIR3bits.RC2IF) {
+            uart_byte = RCREG2;
+            TXREG2 = uart_byte;
+
+            if(RCSTA2 & 0x06){          /* Framing or overrun error */
+                RCSTA2bits.CREN=0;      /* Clear errors and do nothing */
+                RCSTA2bits.CREN=1;
+            }else{
+                #if DEBUG
+                    printf("Received byte: %x at RCREG2\r\n", uart_byte);
+                #endif
+            }
+            PIR3bits.RC2IF = 0;
         }
-
-        PIR3bits.RC2IF = 0;
-    }
-
+    #endif
+    
     if(TXB0IF){
         TXB0IF = 0;
     }
 
     /* Command to this node received */
     if (RXB0IF && RXB0FUL){
-        LATAbits.LA2 ^= 1;
         if(RXB0OVFL){
                 RXB0OVFL = 0;
         }
