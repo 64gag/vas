@@ -6,13 +6,13 @@
  * Created on April 16, 2014, 12:14 PM
  */
 
-//#define UART
-#define CAN
+#define UART
+//#define CAN
 
 #include "config.h"
 #include <delays.h>
 #ifdef CAN
- #include "ecan.h"
+ #include "can.h"
 #endif
 
 /* * * * * * * * * * * MACROS * * * * * * * * * * */
@@ -57,7 +57,6 @@
 
 /* * * * * * * * * * * LOOKUP TABLES * * * * * * * * * * */
 
-#pragma idata gpr5
 /* Table with the 128 possible shaft positions, zero means error (or undefined position?) */
 unsigned char shaft[256] = { 0x00, 0x38, 0x28, 0x37, 0x18, 0x00, 0x27, 0x34, 0x08, 0x39, 0x00, 0x00, 0x17, 0x00, 0x24, 0x0D, \
                              0x78, 0x00, 0x29, 0x36, 0x00, 0x00, 0x00, 0x35, 0x07, 0x00, 0x00, 0x00, 0x14, 0x13, 0x7D, 0x12, \
@@ -75,7 +74,6 @@ unsigned char shaft[256] = { 0x00, 0x38, 0x28, 0x37, 0x18, 0x00, 0x27, 0x34, 0x0
                              0x00, 0x53, 0x00, 0x2C, 0x4B, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, \
                              0x64, 0x3D, 0x65, 0x42, 0x00, 0x3E, 0x00, 0x31, 0x63, 0x3C, 0x00, 0x2F, 0x00, 0x00, 0x00, 0x30, \
                              0x4D, 0x52, 0x4E, 0x41, 0x4C, 0x3F, 0x00, 0x40, 0x62, 0x51, 0x4F, 0x50, 0x61, 0x60, 0x70, 0x00 };
-#pragma idata
 
 /* Map table from line angle to encoder position */
 unsigned char linemap[182] = { 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, \
@@ -105,12 +103,6 @@ unsigned char uart_byte;
 
 void main(void)
 {
-    #ifdef CAN
-        unsigned long id;
-        BYTE data[4];
-        BYTE dataLen;
-        ECAN_RX_MSG_FLAGS flags;
-    #endif
     OSCCON = 0b00000010 | FREQ_8M;
     while (!OSCCONbits.HFIOFS);   /* Wait for oscillator to stabilize */
     OSCCON2 = 0;
@@ -126,20 +118,20 @@ void main(void)
     LATC = 0;
     #ifdef UART
         /* UART configurations */
-        TXSTA1bits.TX9 = 0;
-        TXSTA1bits.TXEN = 1;
-        TXSTA1bits.SYNC = 0;
-        TXSTA1bits.SENDB = 0;
-        TXSTA1bits.BRGH = 1;
-        RCSTA1bits.SPEN = 1;
-        RCSTA1bits.RX9 = 0;
-        RCSTA1bits.CREN = 1;
-        BAUDCON1bits.TXCKP = 0;
-        BAUDCON1bits.BRG16 = 0;
-        BAUDCON1bits.WUE = 0; /* Could be 1? */
-        BAUDCON1bits.ABDEN = 0;
-        SPBRG1 = 12;
-        SPBRGH1 = 0;
+        TXSTA2bits.TX9 = 0;
+        TXSTA2bits.TXEN = 1;
+        TXSTA2bits.SYNC = 0;
+        TXSTA2bits.SENDB = 0;
+        TXSTA2bits.BRGH = 1;
+        RCSTA2bits.SPEN = 1;
+        RCSTA2bits.RX9 = 0;
+        RCSTA2bits.CREN = 1;
+        BAUDCON2bits.TXCKP = 0;
+        BAUDCON2bits.BRG16 = 0;
+        BAUDCON2bits.WUE = 0; /* Could be 1? */
+        BAUDCON2bits.ABDEN = 0;
+        SPBRG2 = 25;
+        SPBRGH2 = 0;
     #endif
     /* Configure CCP1 and its timer */
     PR2 = 0xff;             /* Value at which it interrupts */
@@ -152,14 +144,17 @@ void main(void)
 
     /* Interrupts */
     #ifdef UART
-        PIR1bits.RC1IF = 0;     /* EUSART receive*/
-        PIE1bits.RC1IE = 1;
-        PIR1bits.TX1IF = 0;     /* EUSART transmit*/
-        PIE1bits.TX1IE = 0;
+        PIR3bits.RC2IF = 0;     /* EUSART receive*/
+        PIE3bits.RC2IE = 1;
+        PIR3bits.TX2IF = 0;     /* EUSART transmit*/
+        PIE3bits.TX2IE = 0;
     #endif
     INTCONbits.PEIE = 1;    /* Peripheral interrupt enable */
     INTCONbits.GIE = 1;     /* Global interrupt enable */
 
+    while(1);
+
+#if 0
     setSpeed(speed);
     setDirection(H_DIR_LEFT);
     bridgeEnable();
@@ -182,17 +177,19 @@ void main(void)
     setDirection(H_DIR_B2GND);
     while(1);
     bridgeDisable();
+#endif
 }
 
-#pragma code isr=0x08
-#pragma interrupt ISR
-void ISR(void){
+
+void interrupt isr (void){
 #ifdef UART
-    if (PIR1bits.RC1IF) {
-        uart_byte = RCREG1;
+    if (PIR3bits.RC2IF) {
+        uart_byte = RCREG2;
+        TXREG2 = uart_byte;
+        
         if(RCSTA1 & 0x06){        /* Framing or overrun error */
-            RCSTA1bits.CREN=0;      /* Clear errors and do nothing */
-            RCSTA1bits.CREN=1;
+            RCSTA2bits.CREN=0;      /* Clear errors and do nothing */
+            RCSTA2bits.CREN=1;
         }else{
             if((uart_byte & 0xf0) == MASK_STEER_L){     /* Device ID @ MSNibble */
 
@@ -202,8 +199,7 @@ void ISR(void){
                 }
             }
         }
-        PIR1bits.RC1IF = 0;
+        PIR3bits.RC2IF = 0;
     }
 #endif
 }
-#pragma code
