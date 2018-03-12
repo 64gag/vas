@@ -28,7 +28,7 @@ public class VasHMI extends JPanel{
 	inFromUser = new BufferedReader( new InputStreamReader(System.in));
 
 	try{
-		clientSocket = new Socket("localhost", 6789);
+		clientSocket = new Socket("192.168.1.1", 4444);
 	} catch (IOException e) {
 		System.err.println("Caught IOException: " + e.getMessage());
 	}
@@ -122,7 +122,7 @@ public class VasHMI extends JPanel{
 
         JFrame frame = new JFrame();
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setTitle("JSlider Demo");
+        frame.setTitle("VAS UDEM Human-machine interface");
         frame.setContentPane(panel);
         frame.pack();
         frame.setVisible(true);
